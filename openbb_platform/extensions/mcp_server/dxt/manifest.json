@@ -1,0 +1,140 @@
+{
+  "dxt_version": "0.1",
+  "name": "openbb-mcp",
+  "display_name": "OpenBB MCP Server",
+  "version": "0.0.4",
+  "description": "Model Context Protocol (MCP) server extension for OpenBB Platform. Enables LLM agents to interact with OpenBB Platform's REST API endpoints.",
+  "long_description": "The OpenBB MCP Server provides comprehensive financial data access through the Model Context Protocol. It exposes OpenBB Platform's REST API endpoints as MCP tools, enabling LLM agents to access real-time and historical financial data across multiple categories including equities, crypto, economy, news, fixed income, derivatives, ETFs, currencies, commodities, indices, and regulatory data.\n\nThe server includes dynamic tool discovery capabilities, allowing agents to explore and activate only the tools they need for specific tasks. It supports multiple data providers and can be configured with API keys for premium data access.",
+  "author": {
+    "name": "OpenBB",
+    "email": "hello@openbb.co",
+    "url": "https://openbb.co"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openbb-finance/openbb"
+  },
+  "homepage": "https://openbb.co",
+  "documentation": "https://docs.openbb.co/platform/extensions/mcp_server",
+  "support": "https://github.com/openbb-finance/openbb/issues",
+  "icon": "assets/openbb-logo.png",
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "python",
+      "args": [
+        "${__dirname}/server/main.py",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "OPENBB_MCP_DEFAULT_TOOL_CATEGORIES": "${user_config.default_categories}",
+        "OPENBB_MCP_ALLOWED_TOOL_CATEGORIES": "${user_config.allowed_categories}",
+        "OPENBB_MCP_ENABLE_TOOL_DISCOVERY": "${user_config.enable_tool_discovery}",
+        "OPENBB_MCP_DESCRIBE_ALL_RESPONSES": "${user_config.describe_responses}",
+        "PYTHONPATH": "${__dirname}/lib"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "openbb_equity_price_quote",
+      "description": "Get real-time stock quotes"
+    },
+    {
+      "name": "openbb_equity_price_historical",
+      "description": "Get historical stock price data"
+    },
+    {
+      "name": "openbb_equity_fundamental_overview",
+      "description": "Get fundamental company data"
+    },
+    {
+      "name": "openbb_news_company",
+      "description": "Get company-specific news"
+    },
+    {
+      "name": "openbb_crypto_price_historical",
+      "description": "Get historical cryptocurrency data"
+    },
+    {
+      "name": "openbb_economy_gdp",
+      "description": "Get GDP economic data"
+    },
+    {
+      "name": "discover_tool_categories",
+      "description": "Discover available tool categories"
+    },
+    {
+      "name": "list_available_tools",
+      "description": "List tools in specific categories"
+    },
+    {
+      "name": "enable_tool_categories",
+      "description": "Enable specific tool categories"
+    },
+    {
+      "name": "disable_tool_categories",
+      "description": "Disable specific tool categories"
+    }
+  ],
+  "tools_generated": true,
+  "keywords": [
+    "finance",
+    "financial-data",
+    "stock-market",
+    "cryptocurrency",
+    "economic-data",
+    "mcp",
+    "openbb",
+    "api",
+    "real-time-data"
+  ],
+  "license": "AGPL-3.0-only",
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.10,<3.13"
+    }
+  },
+  "user_config": {
+    "default_categories": {
+      "type": "string",
+      "title": "Default Tool Categories",
+      "description": "Comma-separated list of tool categories to enable at startup (e.g., 'equity,crypto,news' or 'all' for all categories)",
+      "default": "admin",
+      "required": false
+    },
+    "allowed_categories": {
+      "type": "string",
+      "title": "Allowed Tool Categories",
+      "description": "Comma-separated list of categories that can be enabled. Leave empty to allow all categories.",
+      "default": "",
+      "required": false
+    },
+    "enable_tool_discovery": {
+      "type": "boolean",
+      "title": "Enable Tool Discovery",
+      "description": "Enable discovery and management tools for dynamic tool activation",
+      "default": true,
+      "required": false
+    },
+    "describe_responses": {
+      "type": "boolean",
+      "title": "Describe Responses",
+      "description": "Include response information in tool descriptions",
+      "default": false,
+      "required": false
+    },
+    "api_keys_config": {
+      "type": "string",
+      "title": "API Keys Configuration",
+      "description": "JSON string containing API key configurations for data providers (e.g., {'fmp': {'api_key': 'your_key'}})",
+      "sensitive": true,
+      "required": false,
+      "default": "{}"
+    }
+  }
+}

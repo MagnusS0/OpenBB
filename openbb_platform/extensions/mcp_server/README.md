@@ -233,3 +233,27 @@ When `enable_tool_discovery` is enabled (default), the server provides discovery
 To take full advantage of minimal startup tools, you should set the `--default-categories` argument to `admin` this will enable only the discovery tools at startup.
 
 For multi-client deployments or scenarios where you want a fixed toolset, disable tool discovery with `--no-tool-discovery`.
+
+## DXT Extension (Single-Click Installation)
+
+The OpenBB MCP Server is also available as a Desktop Extension (DXT) for single-click installation in compatible MCP clients like Claude Desktop.
+
+### Features
+- **Single-click installation**: No manual configuration required
+- **User-friendly setup**: GUI-based configuration for API keys and settings
+- **Bundled dependencies**: All required Python packages included
+- **Cross-platform**: Works on macOS, Windows, and Linux
+
+### Installation
+1. Download the `openbb-mcp-server.dxt` file
+2. Drag and drop it into your MCP client (e.g., Claude Desktop)
+3. Follow the installation prompts to configure your settings
+
+### Building DXT Package
+To build the DXT package from source:
+```bash
+cd dxt/
+python build_dxt.py
+```
+
+For more information about the DXT extension, see the [DXT documentation](dxt/README.md).

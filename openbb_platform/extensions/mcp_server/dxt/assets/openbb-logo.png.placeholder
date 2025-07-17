@@ -1,0 +1,13 @@
+# OpenBB Logo Placeholder
+
+This file serves as a placeholder for the OpenBB logo that should be included in the DXT package.
+
+For the actual DXT package, you should replace this with a proper PNG image file (openbb-logo.png) that represents the OpenBB brand.
+
+The logo should be:
+- PNG format
+- Square aspect ratio (recommended: 256x256 pixels)
+- Transparent background
+- OpenBB branding compliant
+
+The logo will be displayed in MCP clients when showing the extension information.
