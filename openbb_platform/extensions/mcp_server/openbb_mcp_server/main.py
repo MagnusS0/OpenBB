@@ -236,8 +236,10 @@ def main():
         settings = load_mcp_settings_with_overrides(**overrides)
         mcp = create_mcp_server(settings, app)
 
-        if args.transport == "stdio":
-            mcp.run(transport=args.transport)
+        effective_transport = settings.transport or args.transport
+
+        if effective_transport == "stdio":
+            mcp.run(transport=effective_transport)
 
         else:
             # Get CORS settings from system configuration
@@ -255,11 +257,29 @@ def main():
                 ),
             ]
 
+            # Add Smithery config middleware to capture per-session config from /mcp
+            try:
+                from .utils.smithery_middleware import SmitheryConfigMiddleware
+                extra_middleware = [Middleware(SmitheryConfigMiddleware)]
+            except Exception:
+                extra_middleware = []
+
+            all_middleware = cors_middleware + extra_middleware
+
+            # Container-friendly host/port: honor environment variables if present
+            import os
+
+            host = os.getenv("HOST") or ("0.0.0.0" if os.getenv("PORT") else args.host)
+            try:
+                port = int(os.getenv("PORT", str(args.port)))
+            except ValueError:
+                port = args.port
+
             mcp.run(
-                transport=args.transport,
-                host=args.host,
-                port=args.port,
-                middleware=cors_middleware,
+                transport=effective_transport,
+                host=host,
+                port=port,
+                middleware=all_middleware,
             )
 
     except Exception as e:

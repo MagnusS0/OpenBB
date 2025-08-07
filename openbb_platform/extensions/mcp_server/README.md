@@ -233,3 +233,29 @@ When `enable_tool_discovery` is enabled (default), the server provides discovery
 To take full advantage of minimal startup tools, you should set the `--default-categories` argument to `admin` this will enable only the discovery tools at startup.
 
 For multi-client deployments or scenarios where you want a fixed toolset, disable tool discovery with `--no-tool-discovery`.
+
+## Smithery Deployment
+
+This server can be hosted on Smithery using the provided `Dockerfile` and `smithery.yaml`.
+
+- The server listens on streamable HTTP at `/mcp` and honors Smithery query-param configuration.
+- Pass provider API keys as query parameters (either `credentials.<key>` or flat names like `polygon_api_key`, `FRED_API_KEY`). They are used transiently per MCP session and do not persist to disk.
+- Tool discovery can remain enabled; for multi-tenant deployments, prefer `--no-tool-discovery`.
+
+Example connection URL (Smithery will generate this for clients):
+
+```
+https://server.smithery.ai/@openbb/openbb-mcp/mcp?polygon_api_key=pk_...&FRED_API_KEY=sk_...
+```
+
+No local `user_settings.json` is required in Smithery; credentials are provided per session by query parameters.
+
+Example Smithery environment configuration:
+
+```
+OPENBB_API_AUTH=true
+OPENBB_API_AUTH_EXTENSION=openbb_smithery_auth
+OPENBB_MCP_ENABLE_TOOL_DISCOVERY=false
+```
+
+Smithery will pass the API keys as query parameters. No `user_settings.json` required.

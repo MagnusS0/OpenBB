@@ -54,6 +54,13 @@ the exact same operations available to REST clients.""",
         alias="OPENBB_MCP_DESCRIBE_RESPONSES",
     )
 
+    # Optional transport override via env for container deployments
+    transport: str | None = Field(
+        default=None,
+        description="Override transport when launching via env (e.g., 'sse' or 'streamable-http')",
+        alias="OPENBB_MCP_TRANSPORT",
+    )
+
     @field_validator(
         "default_tool_categories", "allowed_tool_categories", mode="before"
     )

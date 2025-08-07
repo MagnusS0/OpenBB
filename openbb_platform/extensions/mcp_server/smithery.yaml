@@ -1,0 +1,30 @@
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+startCommand:
+  type: "http"
+  configSchema:
+    type: "object"
+    properties:
+      # Users can pass their provider API keys here; we map them into OpenBB credentials
+      polygon_api_key:
+        type: "string"
+        description: "Polygon.io API key"
+      fred_api_key:
+        type: "string"
+        description: "FRED API key"
+      newsapi_api_key:
+        type: "string"
+        description: "NewsAPI API key"
+      # You can also use uppercase env-style keys
+      POLYGON_API_KEY:
+        type: "string"
+      FRED_API_KEY:
+        type: "string"
+      NEWSAPI_API_KEY:
+        type: "string"
+    required: []
+  exampleConfig:
+    polygon_api_key: "pk_example"
+    fred_api_key: "sk_example"

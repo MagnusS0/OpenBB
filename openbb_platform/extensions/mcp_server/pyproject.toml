@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "openbb-mcp-server"
-version = "0.0.4"
+version = "0.0.5"
 description = "OpenBB Platform MCP Server"
 authors = ["OpenBB <hello@openbb.co>"]
 license = "AGPL-3.0-only"
@@ -12,6 +12,9 @@ packages = [{ include = "openbb_mcp_server" }]
 
 [tool.poetry.scripts]
 openbb-mcp = "openbb_mcp_server.main:main"
+
+[tool.poetry.plugins."openbb_core_extension"]
+openbb_smithery_auth = "openbb_mcp_server.smithery_auth"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
