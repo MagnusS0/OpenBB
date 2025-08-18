@@ -5,7 +5,7 @@ This extension enables LLM agents to interact with OpenBB Platform's REST API en
 The server provides discovery tools that allow agents to explore different options and dynamically adjust their active toolset.
 This prevents agents from being overwhelmed with too many tools while allowing them to discover and activate only the tools they need for specific tasks.
 
-Using dynamic tool discovery, has one major drawback, it makes the server a single-user server.
+Using dynamic tool discovery has one major drawback, it makes the server a single-user server.
 The tool updates are global, so if one user updates a tool, it will be updated for all users.
 
 If you plan to serve multiple users, you should disable tool discovery,
@@ -132,7 +132,7 @@ openbb-mcp --default-categories '["equity", "news"]'
 openbb-mcp --uvicorn-config "host:0.0.0.0,port:9000"
 
 # Dictionary with a JSON-encoded string (note the single quotes)
-openbb-mcp --uvicorn-config '{"host": "0.0.0.0", "port": 9000, "reload": true}'
+openbb-mcp --uvicorn-config '{"host": "0.0.0.0", "port": 9000, "env_file": "./path_to/.env"}'
 ```
 
 **Environment Variables (in a `.env` file):**
