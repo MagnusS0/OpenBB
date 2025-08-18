@@ -148,7 +148,7 @@ OPENBB_MCP_DEFAULT_TOOL_CATEGORIES='["equity", "news"]'
 OPENBB_MCP_UVICORN_CONFIG="host:0.0.0.0,port:9000"
 
 # Dictionary with a JSON-encoded string
-OPENBB_MCP_UVICORN_CONFIG='{"host": "0.0.0.0", "port": 9000, "reload": true}'
+OPENBB_MCP_UVICORN_CONFIG='{"host": "0.0.0.0", "port": 9000, "env_file": "./path_to/.env"}'
 ```
 
 ## Settings Reference
