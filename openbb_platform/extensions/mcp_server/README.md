@@ -8,7 +8,7 @@ This prevents agents from being overwhelmed with too many tools while allowing t
 Using dynamic tool discovery, has one major drawback, it makes the server a single-user server.
 The tool updates are global, so if one user updates a tool, it will be updated for all users.
 
-If you plan to server multiple users, you should disable tool discovery,
+If you plan to serve multiple users, you should disable tool discovery,
 and instead use the `allowed_tool_categories` and `default_tool_categories` settings to control the tools that are available to the users.
 
 ## Installation & Usage
