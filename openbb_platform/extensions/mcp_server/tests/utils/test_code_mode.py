@@ -1,5 +1,6 @@
 """Tests for OpenBB code mode utilities."""
 
+# pylint: disable=protected-access
 from __future__ import annotations
 
 from dataclasses import dataclass

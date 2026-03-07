@@ -195,6 +195,15 @@ class OpenBBBM25SearchTransform(BM25SearchTransform):
             results.append(row)
         return results
 
+    async def render_results(self, tools: Sequence[Tool]) -> Any:
+        """Render search results using the configured serializer.
+
+        Public surface for ``_render_results`` (inherited from
+        ``BaseSearchTransform``) so closures in ``build_search_tool`` can call
+        it without triggering pylint W0212 (protected-access on a client class).
+        """
+        return await self._render_results(tools)
+
     # ------------------------------------------------------------------
     # Public search/category API
     # ------------------------------------------------------------------
@@ -322,7 +331,7 @@ class OpenBBBM25SearchTransform(BM25SearchTransform):
                     for t in results
                 ]
                 return "\n".join(lines) if lines else "No tools matched the query."
-            return await transform._render_results(results)  # noqa: SLF001
+            return await transform.render_results(results)
 
         return Tool.from_function(fn=search, name=name)
 
