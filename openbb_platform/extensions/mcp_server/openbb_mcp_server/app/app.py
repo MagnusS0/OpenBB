@@ -14,9 +14,9 @@ from typing import Annotated, Any
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastmcp import FastMCP
+from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
 from fastmcp.prompts import PromptArgument
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.server.context import Context
 from fastmcp.server.providers.openapi import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
@@ -38,23 +38,24 @@ from fastmcp.server.transforms import PromptsAsTools, ResourcesAsTools
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
-from openbb_core.api.rest_api import app
 from openbb_core.app.service.system_service import SystemService
 from pydantic import Field
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from openbb_mcp_server.models.category_index import CategoryIndex
 from openbb_mcp_server.models.mcp_config import (
     ArgumentDefinitionModel,
     is_valid_mcp_config,
 )
 from openbb_mcp_server.models.prompts import StaticPrompt
 from openbb_mcp_server.models.settings import MCPSettings
-from openbb_mcp_server.models.tools import CategoryInfo, SubcategoryInfo, ToolInfo
 from openbb_mcp_server.service.mcp_service import MCPService
 from openbb_mcp_server.utils.app_import import parse_args
+from openbb_mcp_server.utils.code_mode import (
+    build_openbb_code_mode_transform,
+    build_openbb_search_transform,
+)
 from openbb_mcp_server.utils.fastapi import (
     get_api_prefix,
     process_fastapi_routes_for_mcp,
@@ -72,6 +73,14 @@ _VENDOR_SKILLS_PROVIDERS = {
     "goose": GooseSkillsProvider,
     "opencode": OpenCodeSkillsProvider,
 }
+
+
+def _get_default_openbb_app() -> FastAPI:
+    """Lazy-load the default OpenBB FastAPI app to avoid import-time side effects."""
+    # pylint: disable=import-outside-toplevel
+    from openbb_core.api.rest_api import app as default_app
+
+    return default_app
 
 
 def _extract_brief_description(full_description: str) -> str:
@@ -97,6 +106,7 @@ def _get_mcp_config_from_route(fa_route: APIRoute | None) -> dict:
 
 def _strip_api_prefix(path: str, api_prefix: str) -> str:
     """Strip the exact api_prefix (from SystemService) from an absolute path.
+
     Returns the remainder without a leading slash.
     """
     if not path:
@@ -242,7 +252,7 @@ def _add_prompts_from_json(mcp: FastMCP, settings: MCPSettings) -> None:
                     continue
 
         prompt_tags = prompt_def.get("tags", [])
-        tags = set(prompt_tags) if isinstance(prompt_tags, (list, set)) else set()
+        tags = set(prompt_tags) if isinstance(prompt_tags, list | set) else set()
         tags.add("server")
         mcp.add_prompt(
             StaticPrompt(
@@ -271,7 +281,7 @@ def _add_inline_prompts(mcp: FastMCP, prompt_definitions: list) -> None:
             prompt_tags = prompt_def.get("tags", [])
             tool = prompt_def.get("tool", "")
 
-            tags = set(prompt_tags) if isinstance(prompt_tags, (list, set)) else set()
+            tags = set(prompt_tags) if isinstance(prompt_tags, list | set) else set()
             tags.add("route-specific")
             tags.add(tool)
 
@@ -341,6 +351,42 @@ def _add_skills_default_prompt(mcp: FastMCP) -> None:
     logger.info("Added default system prompt with skill awareness nudge.")
 
 
+def _apply_discovery_transforms(mcp: FastMCP, settings: MCPSettings) -> None:
+    """Apply FastMCP discovery transforms (CodeMode or standalone search mode)."""
+    if settings.enable_code_mode:
+        limits = settings.get_code_mode_limits()
+        mcp.add_transform(
+            build_openbb_code_mode_transform(
+                sandbox_provider=MontySandboxProvider(limits=limits),
+                execute_tool_name="execute",
+                search_max_results=settings.code_mode_search_max_results,
+                search_output_format=settings.code_mode_search_output_format,
+            )
+        )
+        logger.info(
+            "Enabled FastMCP Code Mode transform with limits: %s | search_max_results=%d | search_output_format=%s",
+            limits,
+            settings.code_mode_search_max_results,
+            settings.code_mode_search_output_format,
+        )
+        return
+
+    if settings.enable_tool_discovery:
+        mcp.add_transform(
+            build_openbb_search_transform(
+                max_results=settings.code_mode_search_max_results,
+                output_format=settings.code_mode_search_output_format,
+                search_tool_name="search",
+                call_tool_name="call_tool",
+            )
+        )
+        logger.info(
+            "Enabled FastMCP search discovery transform: search_max_results=%d | search_output_format=%s",
+            settings.code_mode_search_max_results,
+            settings.code_mode_search_output_format,
+        )
+
+
 # pylint: disable=R0914,R0915
 def create_mcp_server(
     settings: MCPSettings,
@@ -369,14 +415,14 @@ def create_mcp_server(
         The configured FastMCP server instance.
     """
     auth_provider = None
-    if auth and isinstance(auth, (list, tuple)) and len(auth) == 2 and all(auth):
+    if auth and isinstance(auth, list | tuple) and len(auth) == 2 and all(auth):
         # pylint: disable=import-outside-toplevel
         from .auth import get_auth_provider
 
         auth_provider = get_auth_provider(settings)
 
-    category_index = CategoryIndex()
-    _enabled_tools: set[str] = set()
+    visibility_enable_keys: set[str] = set()
+    visibility_disable_keys: set[str] = set()
 
     # Single-pass processing: filter routes, build route maps, and create lookup dictionary
     processed_data = process_fastapi_routes_for_mcp(fastapi_app, settings)
@@ -384,6 +430,15 @@ def create_mcp_server(
     route_lookup = processed_data.route_lookup
     api_prefix = get_api_prefix(settings)
     tool_prompts_map: dict = {}
+
+    try:
+        # ProviderInterface is a startup singleton; instantiate once and reuse.
+        # pylint: disable=import-outside-toplevel
+        from openbb_core.app.provider_interface import ProviderInterface
+
+        _provider_interface = ProviderInterface()
+    except Exception:
+        _provider_interface = None
 
     for prompt_def in processed_data.prompt_definitions:
         tool_name = prompt_def.get("tool")
@@ -400,12 +455,11 @@ def create_mcp_server(
             )
 
     # pylint: disable=R0912
-    def customize_components(
+    def customize_components(  # noqa: PLR0912
         route: HTTPRoute,
         component: OpenAPITool | OpenAPIResource | OpenAPIResourceTemplate,
     ) -> None:
         """Apply naming, tags, enable/disable, and resource mime type using per-route config."""
-
         # Map back to FastAPI route to read openapi_extra
         fa_route = route_lookup.get((route.path, route.method.upper()))
         mcp_cfg = _get_mcp_config_from_route(fa_route)
@@ -450,6 +504,15 @@ def create_mcp_server(
 
         # Tags
         component.tags.add(category)
+
+        if _provider_interface and fa_route:
+            model_name = (fa_route.openapi_extra or {}).get("model")
+            if model_name:
+                for provider_name in _provider_interface.map.get(model_name, {}):
+                    provider_tag = str(provider_name).strip().lower()
+                    if provider_tag and provider_tag != "openbb":
+                        component.tags.add(provider_tag)
+
         extra_tags = mcp_cfg.get("tags") or []
         for t in extra_tags:
             component.tags.add(str(t))
@@ -487,8 +550,10 @@ def create_mcp_server(
                     component.description or ""
                 ) + prompt_metadata_str
 
-        # Enable/disable: per-route override first, then category defaults
+        # Enable/disable: per-route override first, then category defaults.
+        # Collect component keys and apply visibility at server-level after construction.
         enable_override = mcp_cfg.get("enable")
+        component_key = getattr(component, "key", None)
         if isinstance(enable_override, bool):
             should_enable = enable_override
         elif "all" in settings.default_tool_categories or any(
@@ -499,23 +564,19 @@ def create_mcp_server(
         else:
             should_enable = False
 
-        if should_enable and isinstance(component, OpenAPITool):
-            _enabled_tools.add(component.name)
+        if isinstance(component_key, str) and component_key:
+            if should_enable:
+                visibility_enable_keys.add(component_key)
+                visibility_disable_keys.discard(component_key)
+            else:
+                visibility_disable_keys.add(component_key)
+                visibility_enable_keys.discard(component_key)
 
         # Resource-specific mime type
         if isinstance(component, OpenAPIResource):
             mime_type = mcp_cfg.get("mime_type")
             if isinstance(mime_type, str) and mime_type:
                 component.mime_type = mime_type
-
-        # Register tool in the category index for discovery browsing
-        if isinstance(component, OpenAPITool):
-            category_index.register(
-                category=category,
-                subcategory=subcategory,
-                tool_name=component.name,
-                description=component.description or "",
-            )
 
     # Extract httpx_client_kwargs from settings/kwargs if available
     httpx_client_kwargs = httpx_kwargs or settings.get_httpx_kwargs()
@@ -533,20 +594,10 @@ def create_mcp_server(
         **fastmcp_kwargs,
     )
 
-    # Disable ALL non-admin tools first, then selectively re-enable.
-    all_registered = category_index.all_tool_names()
-    if all_registered:
-        mcp.disable(names=all_registered)
-
-    if settings.enable_tool_discovery:
-        # Discovery mode: everything stays disabled.
-        # Agents progressively activate what they need per-session
-        # via activate_tools / activate_category.
-        pass
-    elif _enabled_tools:
-        # Fixed-toolset mode: re-enable tools that matched
-        # per-route overrides or default_tool_categories.
-        mcp.enable(names=_enabled_tools)
+    if visibility_disable_keys:
+        mcp.disable(keys=visibility_disable_keys)
+    if visibility_enable_keys:
+        mcp.enable(keys=visibility_enable_keys)
 
     # Add system prompt if configured
     if settings.system_prompt_file:
@@ -592,146 +643,6 @@ def create_mcp_server(
     _skills_loaded = _bundled_skills_loaded or bool(settings.skills_providers)
     if _skills_loaded and not settings.system_prompt_file:
         _add_skills_default_prompt(mcp)
-
-    # Admin/discovery tools if enabled
-    if settings.enable_tool_discovery:
-
-        @mcp.tool(tags={"admin"})
-        def available_categories() -> list[CategoryInfo]:
-            """List available tool categories and subcategories with tool counts."""
-            categories = category_index.get_categories()
-            return [
-                CategoryInfo(
-                    name=category_name,
-                    subcategories=[
-                        SubcategoryInfo(name=subcat_name, tool_count=len(tool_names))
-                        for subcat_name, tool_names in sorted(subcategories.items())
-                    ],
-                    total_tools=sum(
-                        len(tool_names) for tool_names in subcategories.values()
-                    ),
-                )
-                for category_name, subcategories in sorted(categories.items())
-            ]
-
-        @mcp.tool(tags={"admin"})
-        async def available_tools(
-            category: Annotated[
-                str, Field(description="The category of tools to list")
-            ],
-            subcategory: Annotated[
-                str | None,
-                Field(
-                    description="Optional subcategory to filter by. "
-                    "Use 'general' for tools directly under the category."
-                ),
-            ] = None,
-        ) -> list[ToolInfo]:
-            """List tools in a specific category and subcategory."""
-            cat_data = category_index.get_subcategories(category)
-
-            if cat_data is None:
-                available = list(category_index.get_categories().keys())
-                raise ValueError(
-                    f"Category '{category}' not found. "
-                    f"Available categories: {', '.join(sorted(available))}"
-                )
-
-            if subcategory:
-                names = category_index.get_subcategory_names(category, subcategory)
-                if not names:
-                    raise ValueError(
-                        f"Subcategory '{subcategory}' not found in category '{category}'. "
-                        f"Available subcategories: {', '.join(sorted(cat_data.keys()))}"
-                    )
-            else:
-                names = category_index.get_category_names(category)
-
-            # Resolve active state from FastMCP's live tool list
-            active_tools = await mcp.list_tools()
-            active_names = {t.name for t in active_tools}
-
-            # Build descriptions — use live tool object when available,
-            # fall back to cached short description from the index.
-            tool_map = {t.name: t for t in active_tools}
-            results: list[ToolInfo] = []
-            for name in sorted(names):
-                if name in tool_map:
-                    desc = _extract_brief_description(tool_map[name].description or "")
-                else:
-                    desc = category_index.get_description(name)
-                results.append(
-                    ToolInfo(name=name, active=name in active_names, description=desc)
-                )
-            return results
-
-        @mcp.tool(tags={"admin"})
-        async def activate_tools(
-            tool_names: Annotated[
-                list[str], Field(description="Names of tools to activate")
-            ],
-            ctx: Context,
-        ) -> str:
-            """Activate one or more tools for this session."""
-            valid = [n for n in tool_names if category_index.has_tool(n)]
-            invalid = [n for n in tool_names if not category_index.has_tool(n)]
-            if valid:
-                await ctx.enable_components(names=set(valid))
-            parts: list[str] = []
-            if valid:
-                parts.append(f"Activated: {', '.join(valid)}")
-            if invalid:
-                parts.append(f"Not found: {', '.join(invalid)}")
-            return " ".join(parts) or "No tools processed."
-
-        @mcp.tool(tags={"admin"})
-        async def deactivate_tools(
-            tool_names: Annotated[
-                list[str], Field(description="Names of tools to deactivate")
-            ],
-            ctx: Context,
-        ) -> str:
-            """Deactivate one or more tools for this session."""
-            valid = [n for n in tool_names if category_index.has_tool(n)]
-            invalid = [n for n in tool_names if not category_index.has_tool(n)]
-            if valid:
-                await ctx.disable_components(names=set(valid))
-            parts: list[str] = []
-            if valid:
-                parts.append(f"Deactivated: {', '.join(valid)}")
-            if invalid:
-                parts.append(f"Not found: {', '.join(invalid)}")
-            return " ".join(parts) or "No tools processed."
-
-        @mcp.tool(tags={"admin"})
-        async def activate_category(
-            category: Annotated[
-                str, Field(description="Category name to activate all tools for")
-            ],
-            ctx: Context,
-            subcategory: Annotated[
-                str | None,
-                Field(description="Optional subcategory to narrow activation"),
-            ] = None,
-        ) -> str:
-            """Activate all tools in a category (or subcategory) for this session."""
-            if subcategory:
-                names = category_index.get_subcategory_names(category, subcategory)
-            else:
-                names = category_index.get_category_names(category)
-            if not names:
-                available = list(category_index.get_categories().keys())
-                raise ValueError(
-                    f"No tools found in '{category}'"
-                    + (f"/'{subcategory}'" if subcategory else "")
-                    + f". Available categories: {', '.join(sorted(available))}"
-                )
-            await ctx.enable_components(names=names)
-            scope = f"'{category}'" + (f"/'{subcategory}'" if subcategory else "")
-            return (
-                f"Activated {len(names)} tools in {scope}"
-                f": {', '.join(sorted(names))}"
-            )
 
     # Expose prompts and resources as tools via transforms so that
     # tool-only clients can list/render prompts and list/read resources.
@@ -868,6 +779,9 @@ def create_mcp_server(
             "uri": f"skill://{skill_name}/SKILL.md",
         }
 
+    # Apply discovery transforms (CodeMode or BM25 search)
+    _apply_discovery_transforms(mcp, settings)
+
     return mcp
 
 
@@ -976,7 +890,9 @@ def main():
 
     try:
         # Use imported app if provided, otherwise default OpenBB app
-        target_app = args.imported_app if args.imported_app else app
+        target_app = (
+            args.imported_app if args.imported_app else _get_default_openbb_app()
+        )
 
         # Extract runtime configuration from settings
         http_run_kwargs = settings.get_http_run_kwargs()

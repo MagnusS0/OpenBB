@@ -1,22 +1,22 @@
 """Unit tests for server prompts functionality."""
 
-# pylint: disable=protected-access,unused-argument
+# pylint: disable=protected-access,unused-argument,import-outside-toplevel
 
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+from fastmcp.prompts import PromptArgument
+from fastmcp.server.transforms import PromptsAsTools, ResourcesAsTools
 from openbb_mcp_server.app.app import create_mcp_server
+from openbb_mcp_server.models.prompts import StaticPrompt
 from openbb_mcp_server.models.settings import MCPSettings
 
 
 @patch("openbb_mcp_server.app.app.process_fastapi_routes_for_mcp")
-@patch("openbb_mcp_server.app.app.CategoryIndex")
 @patch("openbb_mcp_server.app.app.FastMCP.from_fastapi")
-def test_load_prompts_from_json(
-    mock_from_fastapi, mock_category_index, mock_process_routes, tmp_path
-):
+def test_load_prompts_from_json(mock_from_fastapi, mock_process_routes, tmp_path):
     """Test that prompts are loaded correctly from a JSON file."""
     prompts_data = [
         {
@@ -46,9 +46,6 @@ def test_load_prompts_from_json(
     mock_processed_data.prompt_definitions = []
     mock_process_routes.return_value = mock_processed_data
 
-    mock_registry_instance = MagicMock()
-    mock_category_index.return_value = mock_registry_instance
-
     mock_mcp_instance = MagicMock()
     mock_from_fastapi.return_value = mock_mcp_instance
 
@@ -65,11 +62,9 @@ def test_load_prompts_from_json(
 
 @patch("openbb_mcp_server.app.app.logger")
 @patch("openbb_mcp_server.app.app.process_fastapi_routes_for_mcp")
-@patch("openbb_mcp_server.app.app.CategoryIndex")
 @patch("openbb_mcp_server.app.app.FastMCP.from_fastapi")
 def test_skip_invalid_prompts(
     mock_from_fastapi,
-    mock_category_index,
     mock_process_routes,
     mock_logger,
     tmp_path,
@@ -93,9 +88,6 @@ def test_skip_invalid_prompts(
     mock_processed_data.prompt_definitions = []
     mock_process_routes.return_value = mock_processed_data
 
-    mock_registry_instance = MagicMock()
-    mock_category_index.return_value = mock_registry_instance
-
     mock_mcp_instance = MagicMock()
     mock_from_fastapi.return_value = mock_mcp_instance
 
@@ -107,11 +99,9 @@ def test_skip_invalid_prompts(
 
 @patch("openbb_mcp_server.app.app.logger")
 @patch("openbb_mcp_server.app.app.process_fastapi_routes_for_mcp")
-@patch("openbb_mcp_server.app.app.CategoryIndex")
 @patch("openbb_mcp_server.app.app.FastMCP.from_fastapi")
 def test_skip_invalid_arguments_in_prompts(
     mock_from_fastapi,
-    mock_category_index,
     mock_process_routes,
     mock_logger,
     tmp_path,
@@ -137,9 +127,6 @@ def test_skip_invalid_arguments_in_prompts(
     mock_processed_data.prompt_definitions = []
     mock_process_routes.return_value = mock_processed_data
 
-    mock_registry_instance = MagicMock()
-    mock_category_index.return_value = mock_registry_instance
-
     mock_mcp_instance = MagicMock()
     mock_from_fastapi.return_value = mock_mcp_instance
 
@@ -154,10 +141,9 @@ def test_skip_invalid_arguments_in_prompts(
 
 @pytest.mark.asyncio
 @patch("openbb_mcp_server.app.app.process_fastapi_routes_for_mcp")
-@patch("openbb_mcp_server.app.app.CategoryIndex")
 @patch("openbb_mcp_server.app.app.FastMCP.from_fastapi")
 async def test_prompts_as_tools_transform_and_defaults(
-    mock_from_fastapi, mock_category_index, mock_process_routes, tmp_path
+    mock_from_fastapi, mock_process_routes, tmp_path
 ):
     """Test that PromptsAsTools transform is added and argument_defaults are stored on StaticPrompt."""
     prompts_data = [
@@ -179,7 +165,8 @@ async def test_prompts_as_tools_transform_and_defaults(
     prompts_file = tmp_path / "prompts.json"
     prompts_file.write_text(json.dumps(prompts_data))
 
-    settings = MCPSettings(server_prompts_file=str(prompts_file), default_skills_dir=None)  # type: ignore
+    # Disable tool discovery so only PromptsAsTools + ResourcesAsTools are added
+    settings = MCPSettings(server_prompts_file=str(prompts_file), default_skills_dir=None, enable_tool_discovery=False)  # type: ignore
     fastapi_app = FastAPI()
 
     mock_processed_data = MagicMock()
@@ -187,9 +174,6 @@ async def test_prompts_as_tools_transform_and_defaults(
     mock_processed_data.route_maps = []
     mock_processed_data.prompt_definitions = []
     mock_process_routes.return_value = mock_processed_data
-
-    mock_registry_instance = MagicMock()
-    mock_category_index.return_value = mock_registry_instance
 
     mock_mcp_instance = MagicMock()
     mock_from_fastapi.return_value = mock_mcp_instance
@@ -204,8 +188,6 @@ async def test_prompts_as_tools_transform_and_defaults(
 
     # Verify PromptsAsTools and ResourcesAsTools transforms were added
     assert mock_mcp_instance.add_transform.call_count == 2
-    from fastmcp.server.transforms import PromptsAsTools, ResourcesAsTools
-
     transforms = [call[0][0] for call in mock_mcp_instance.add_transform.call_args_list]
     assert isinstance(transforms[0], PromptsAsTools)
     assert isinstance(transforms[1], ResourcesAsTools)
@@ -214,9 +196,6 @@ async def test_prompts_as_tools_transform_and_defaults(
 @pytest.mark.asyncio
 async def test_static_prompt_render_applies_defaults():
     """Test that StaticPrompt.render() applies argument_defaults when caller omits them."""
-    from fastmcp.prompts import PromptArgument
-    from openbb_mcp_server.models.prompts import StaticPrompt
-
     prompt = StaticPrompt(
         name="greeting",
         content="Hello, {name}! Welcome to {place}.",

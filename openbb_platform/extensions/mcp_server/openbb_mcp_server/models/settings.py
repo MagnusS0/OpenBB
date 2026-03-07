@@ -4,11 +4,17 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
+from fastmcp.utilities.logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = get_logger(__name__)
 
 _DEFAULT_SKILLS_DIR = str(Path(__file__).resolve().parent.parent / "skills")
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+DEFAULT_CODE_MODE_MAX_DURATION_SECS = 30.0
+DEFAULT_CODE_MODE_MAX_MEMORY = 536_870_912
+DEFAULT_CODE_MODE_SEARCH_MAX_RESULTS = 30
 
 
 class MCPSettings(BaseModel):
@@ -58,12 +64,61 @@ the exact same operations available to REST clients.""",
         alias="OPENBB_MCP_ALLOWED_TOOL_CATEGORIES",
     )
 
+    # Code mode configuration
+    enable_code_mode: bool = Field(
+        default=False,
+        description="Enable FastMCP code mode features for post-processing tools.",
+        alias="OPENBB_MCP_ENABLE_CODE_MODE",
+    )
+    code_mode_max_duration_secs: float = Field(
+        default=DEFAULT_CODE_MODE_MAX_DURATION_SECS,
+        description="Maximum sandbox execution duration for code mode in seconds.",
+        alias="OPENBB_MCP_CODE_MODE_MAX_DURATION_SECS",
+        gt=0,
+    )
+    code_mode_max_memory: int = Field(
+        default=DEFAULT_CODE_MODE_MAX_MEMORY,
+        description="Maximum sandbox memory allocation for code mode in bytes.",
+        alias="OPENBB_MCP_CODE_MODE_MAX_MEMORY",
+        gt=0,
+    )
+    code_mode_max_allocations: int | None = Field(
+        default=None,
+        description="Optional maximum allocation count for code mode sandbox.",
+        alias="OPENBB_MCP_CODE_MODE_MAX_ALLOCATIONS",
+        gt=0,
+    )
+    code_mode_max_recursion_depth: int | None = Field(
+        default=None,
+        description="Optional maximum recursion depth for code mode sandbox.",
+        alias="OPENBB_MCP_CODE_MODE_MAX_RECURSION_DEPTH",
+        gt=0,
+    )
+    code_mode_gc_interval: int | None = Field(
+        default=None,
+        description="Optional garbage collection interval for code mode sandbox.",
+        alias="OPENBB_MCP_CODE_MODE_GC_INTERVAL",
+        gt=0,
+    )
+    code_mode_search_max_results: int = Field(
+        default=DEFAULT_CODE_MODE_SEARCH_MAX_RESULTS,
+        description="Maximum cap for tools returned by discovery search tools (CodeMode or standalone search mode).",
+        alias="OPENBB_MCP_CODE_MODE_SEARCH_MAX_RESULTS",
+        gt=0,
+    )
+    code_mode_search_output_format: Literal["json", "markdown"] = Field(
+        default="markdown",
+        description="Output format for discovery search results (CodeMode or standalone search mode).",
+        alias="OPENBB_MCP_CODE_MODE_SEARCH_OUTPUT_FORMAT",
+    )
+
     # Tool discovery configuration
     enable_tool_discovery: bool = Field(
         default=True,
         description="""
-            Enable tool discovery, allowing the agent to hot-swap tools at runtime.
-            Disable for multi-client or fixed toolset deployments.
+            Enable standalone search discovery mode when CodeMode is disabled.
+            In this mode, full list_tools output is hidden and agents discover tools
+            through search + call_tool flows.
         """,
         alias="OPENBB_MCP_ENABLE_TOOL_DISCOVERY",
     )
@@ -158,6 +213,18 @@ the exact same operations available to REST clients.""",
         alias="OPENBB_MCP_DEPENDENCIES",
     )
 
+    include_tags: set[str] | None = Field(
+        default=None,
+        description="If provided, only components that match these tags will be exposed to clients",
+        alias="OPENBB_MCP_INCLUDE_TAGS",
+    )
+
+    exclude_tags: set[str] | None = Field(
+        default=None,
+        description="If provided, components that match these tags will be excluded from the server",
+        alias="OPENBB_MCP_EXCLUDE_TAGS",
+    )
+
     skills_reload: bool = Field(
         default=False,
         description="If True, skills providers will reload skill files on every read (useful during development).",
@@ -232,6 +299,15 @@ the exact same operations available to REST clients.""",
             return [part.strip() for part in v.split(",") if part.strip()]
         return v
 
+    @field_validator("include_tags", "exclude_tags", mode="before")
+    @classmethod
+    def _split_set(cls, v):
+        if isinstance(v, str):
+            return {part.strip() for part in v.split(",") if part.strip()}
+        if isinstance(v, list):
+            return set(v)
+        return v
+
     @field_validator("httpx_client_kwargs", "client_auth", "server_auth", mode="before")
     @classmethod
     def _validate_json_or_tuple(cls, v):
@@ -265,6 +341,8 @@ the exact same operations available to REST clients.""",
             "mask_error_details": self.mask_error_details,
             "dependencies": self.dependencies,
             "list_page_size": self.list_page_size,
+            "include_tags": self.include_tags,
+            "exclude_tags": self.exclude_tags,
         }
 
         # Only include non-None values
@@ -282,6 +360,22 @@ the exact same operations available to REST clients.""",
             run_fields["uvicorn_config"] = self.uvicorn_config
 
         return run_fields
+
+    def get_code_mode_limits(self) -> dict[str, float | int]:
+        """Return code mode sandbox limits."""
+        limits: dict[str, float | int] = {
+            "max_duration_secs": self.code_mode_max_duration_secs,
+            "max_memory": self.code_mode_max_memory,
+        }
+        optional_limits = {
+            "max_allocations": self.code_mode_max_allocations,
+            "max_recursion_depth": self.code_mode_max_recursion_depth,
+            "gc_interval": self.code_mode_gc_interval,
+        }
+        for key, value in optional_limits.items():
+            if value is not None:
+                limits[key] = value
+        return limits
 
     def get_httpx_kwargs(self) -> dict:
         """
