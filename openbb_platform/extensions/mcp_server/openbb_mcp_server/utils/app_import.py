@@ -158,13 +158,18 @@ Options:
     --no-tool-discovery
         If set, tool discovery will be disabled.
 
+    --enable-code-mode
+        If set, enable FastMCP Code Mode with sandboxed execute.
+
     --system-prompt <path>
         Path to a TXT file with the system prompt.
 
     --server-prompts <path>
         Path to a JSON file with a list of server prompts.
 
-All other arguments are passed through as MCPSettings.
+All other arguments are passed through as MCPSettings, including flags such as
+--enable-code-mode, --code-mode-search-max-results, --include-tags, and
+--exclude-tags.
 """
 
 
